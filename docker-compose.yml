@@ -1,0 +1,92 @@
+version: "3.8"
+
+services:
+  # 1. 持久化数据库
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4
+    container_name: es-ragchat
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false  # 开发环境关闭安全验证（生产需开启）
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data  # 数据持久化
+    healthcheck: # 新增健康检查
+      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: neo4j-ragchat
+    environment:
+      - NEO4J_AUTH=neo4j/Gl20031010
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data  # 数据持久化
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-ragchat
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data  # 数据持久化
+
+  # 2. 一次性 ES 初始化（create + embedd 逻辑）
+  es-init:
+    build:
+      context: ./backend/rag  # Dockerfile 在 backend/rag 目录
+      dockerfile: Dockerfile.init  # 专门的初始化镜像
+    container_name: es-init-ragchat
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+      - INDEX_NAME=qiyefa
+      - DOCS_FOLDER=/app/data
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}  # 从项目根目录 .env 读取 API 密钥
+    volumes:
+      - ./backend/rag/data:/app/data  # 挂载本地公司法文档（需新建 data 目录放 Word）
+    depends_on:
+      elasticsearch:
+        condition: service_healthy  # 等待 ES 健康
+    restart: "no"  # 执行完自动退出
+
+  # 3. 后端服务（FastAPI）
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend-ragchat
+    ports:
+      - "8000:8000"
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+      - NEO4J_URI=bolt://neo4j:7687
+      - REDIS_HOST=redis
+    depends_on:
+      - es-init  # 等初始化完成再启动
+      - elasticsearch
+      - neo4j
+      - redis
+
+  # 4. 前端服务（Vue）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend-ragchat
+    ports:
+      - "5173:80"  # Vite 默认端口
+    depends_on:
+      - backend
+
+# 数据持久化卷
+volumes:
+  es-data:
+  neo4j-data:
+  redis-data:

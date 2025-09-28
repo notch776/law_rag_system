@@ -1,0 +1,4 @@
+requests==2.32.4
+python-dotenv==1.0.0
+openai==1.97.1
+python-docx==1.2.0
