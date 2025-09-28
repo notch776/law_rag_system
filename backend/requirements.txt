@@ -1,0 +1,10 @@
+
+requests==2.32.4
+python-dotenv==1.0.0
+openai==1.97.1
+redis==6.4.0
+py2neo
+numpy==1.26.4
+fastapi==0.104.1
+pydantic==2.8.2
+uvicorn==0.24.0

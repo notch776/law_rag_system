@@ -1,0 +1,13 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.init.txt .
+COPY pip.conf /etc/pip.conf
+RUN pip install --no-cache-dir -r requirements.init.txt
+
+COPY create.py embedd.py .env ./
+
+VOLUME /app/data
+
+CMD ["python", "embedd.py"]
