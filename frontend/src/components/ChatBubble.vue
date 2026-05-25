@@ -1,89 +1,65 @@
-<!-- src/components/ChatBubble.vue -->
 <template>
-  <div :class="['chat-bubble', role]">
-    <div class="avatar" :class="role">
-      {{ role === 'user' ? 'U' : role === 'system' ? 'S' : 'AI' }}
+  <div :class="['bubble-row', role]">
+    <div class="avatar">
+      <i :class="avatarIcon"></i>
     </div>
-    <div class="message-content">
-      <p>{{ content }}</p>
-      <small class="timestamp">{{ formatTime(timestamp) }}</small>
-    </div>
+    <article class="bubble-card">
+      <header class="bubble-meta">
+        <span class="role-label">{{ roleLabel }}</span>
+        <span v-if="mode" class="mode-tag">{{ mode }}</span>
+        <span class="time-label">{{ formatTime(timestamp) }}</span>
+      </header>
+      <div class="bubble-content">
+        <span v-if="content">{{ content }}</span>
+        <span v-else-if="progress" class="progress-inline">
+          <i class="bi bi-arrow-repeat"></i>
+          {{ progress }}
+        </span>
+        <span v-else>正在生成回答...</span>
+        <span v-if="content && progress" class="progress-inline progress-block">
+          <i class="bi bi-arrow-repeat"></i>
+          {{ progress }}
+        </span>
+      </div>
+      <section v-if="citations.length" class="citations">
+        <div class="citation-title"><i class="bi bi-journal-text"></i> 参考来源</div>
+        <details v-for="item in citations" :key="item.citation_id" class="citation-item">
+          <summary>[{{ item.citation_id }}] {{ item.law_name }} {{ item.article_id || '相关条文' }}</summary>
+          <p>{{ item.content }}</p>
+          <div class="citation-foot">来源：{{ item.filename || '公司法知识库' }}</div>
+        </details>
+      </section>
+    </article>
   </div>
 </template>
 
 <script>
 export default {
   props: {
-    role: { type: String, required: true }, // 'user' or 'assistant'
-    content: { type: String, required: true },
-    timestamp: { type: String, required: true }
+    role: { type: String, required: true },
+    content: { type: String, default: '' },
+    progress: { type: String, default: '' },
+    timestamp: { type: String, required: true },
+    mode: { type: String, default: '' },
+    citations: { type: Array, default: () => [] },
+  },
+  computed: {
+    avatarIcon() {
+      if (this.role === 'user') return 'bi bi-person-fill';
+      if (this.role === 'system') return 'bi bi-info-lg';
+      return 'bi bi-robot';
+    },
+    roleLabel() {
+      if (this.role === 'user') return '用户';
+      if (this.role === 'system') return '系统';
+      return '法律助手';
+    },
   },
   methods: {
     formatTime(ts) {
       const date = new Date(ts);
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-  }
-}
+    },
+  },
+};
 </script>
-
-<style scoped>
-.chat-bubble {
-  display: flex;
-  margin: 12px 0;
-  gap: 10px;
-}
-
-.user {
-  flex-direction: row-reverse;
-}
-
-.user .avatar {
-  background-color: #0d6efd;
-}
-
-.assistant .avatar {
-  background-color: #6c757d;
-}
-
-.system .avatar {
-  background-color: #ffc107;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.message-content {
-  background: #f1f1f1;
-  padding: 10px 14px;
-  border-radius: 18px;
-  max-width: 70%;
-  word-wrap: break-word;
-}
-
-.user .message-content {
-  background: #d1e7ff;
-}
-
-.system .message-content {
-  background: #fff3cd;
-  border: 1px solid #ffeeba;
-}
-
-.timestamp {
-  display: block;
-  text-align: right;
-  font-size: 0.75em;
-  color: #888;
-  margin-top: 4px;
-}
-</style>

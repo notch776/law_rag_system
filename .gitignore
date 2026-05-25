@@ -1,0 +1,22 @@
+.DS_Store
+
+# Environment files
+.env
+backend/.env
+backend/rag/.env
+
+# Local runtime artifacts
+.local/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+final_project/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
+# Local source materials
+need/

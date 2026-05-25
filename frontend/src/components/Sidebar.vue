@@ -1,80 +1,60 @@
-<!-- src/components/Sidebar.vue -->
 <template>
-  <div class="sidebar h-100 bg-white border-end shadow-sm">
-    <!-- Logo & Title -->
-    <div class="p-3 border-bottom d-flex align-items-center">
-      <i class="bi bi-columns-gap fs-4 text-primary me-2"></i>
-      <h5 class="mb-0 text-primary fw-bold">法律咨询</h5>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand-mark"><i class="bi bi-bank2"></i></div>
+      <div>
+        <div class="brand-title">法律咨询</div>
+        <div class="brand-subtitle">Company Law RAG</div>
+      </div>
     </div>
 
-    <!-- Header -->
-    <div class="px-3 py-2 d-flex justify-content-between align-items-center">
-      <span class="fw-semibold text-secondary">历史对话</span>
-      <button @click="handleNew" class="btn btn-sm btn-outline-primary rounded-circle p-1" title="新建对话">
-        <i class="bi bi-plus"></i>
-      </button>
-    </div>
+    <button class="new-chat-btn" @click="$emit('new')">
+      <i class="bi bi-plus-lg"></i>
+      <span>新建法律咨询</span>
+    </button>
 
-    <!-- Conversations List -->
-    <ul class="list-group list-group-flush overflow-auto" style="height: calc(100% - 90px);">
-      <li
-        v-for="conv in conversations"
-        :key="conv.conversation_id"
-        class="list-group-item list-group-item-action py-3"
-        :class="{ active: activeId === conv.conversation_id }"
-        @click="load(conv)"
-        style="cursor: pointer;"
-      >
-        <div class="d-flex justify-content-between">
-          <div class="flex-grow-1">
-            <h6 class="mb-1 fw-medium">{{ getPreview(conv) }}</h6>
-            <small class="text-muted">{{ formatDate(conv.updated_at) }}</small>
-          </div>
+    <div class="sidebar-section">
+      <div class="section-label">历史对话</div>
+      <div class="conversation-list">
+        <button
+          v-for="conv in conversations"
+          :key="conv.conversation_id"
+          :class="['conversation-item', activeId === conv.conversation_id ? 'active' : '']"
+          @click="$emit('load', conv)"
+        >
+          <span class="conversation-icon"><i class="bi bi-chat-square-text"></i></span>
+          <span class="conversation-main">
+            <span class="conversation-title">{{ conv.heading || '新对话' }}</span>
+            <span class="conversation-time">{{ formatDate(conv.updated_at) }}</span>
+          </span>
+        </button>
+        <div v-if="!conversations.length" class="empty-history">
+          <i class="bi bi-inbox"></i>
+          <span>暂无历史对话</span>
         </div>
-      </li>
-      <li v-if="!conversations.length" class="list-group-item text-center text-muted">
-        暂无历史对话
-      </li>
-    </ul>
-
-    <!-- Footer -->
-    <div class="px-3 py-2 text-center text-muted border-top small">
-      共 {{ conversations.length }} 条记录
+      </div>
     </div>
-  </div>
+
+    <div class="sidebar-footer">
+      <div class="status-dot"></div>
+      <span>本地端到端测试环境</span>
+    </div>
+  </aside>
 </template>
 
 <script>
 export default {
-  props: ['conversations', 'activeId'],
+  props: {
+    conversations: { type: Array, default: () => [] },
+    activeId: { type: String, default: null },
+  },
   emits: ['new', 'load'],
   methods: {
-    getPreview(conv) {
-      return conv.heading || '新对话';
+    formatDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      return date.toLocaleDateString([], { month: '2-digit', day: '2-digit' }) + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     },
-    formatDate(dateStr) {
-      return new Date(dateStr).toLocaleDateString().replace(/\//g, '-');
-    },
-    handleNew() {
-      this.$emit('new');
-    },
-    load(conv) {
-      this.$emit('load', conv);
-    }
-  }
-}
+  },
+};
 </script>
-
-<style scoped>
-.sidebar {
-  min-width: 280px;
-  max-width: 320px;
-}
-.list-group-item.active {
-  background-color: #e7f3ff;
-  border-color: #b3d9ff;
-}
-.list-group-item:hover {
-  background-color: #f8f9fa;
-}
-</style>

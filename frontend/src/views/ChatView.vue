@@ -1,321 +1,322 @@
-<!-- src/views/ChatView.vue -->
 <template>
-  <div class="chat-container d-flex flex-column h-100">
-    <!-- Customer support status indicator -->
-    <div v-if="isWaitingSupport" class="bg-warning text-white p-2 text-center text-sm">
-      您已请求转人工，正在等待客服接入...
-    </div>
-    <div v-if="isSupportConnected" class="bg-success text-white p-2 text-center text-sm">
-      客服已接入，正在为您服务
-    </div>
+  <main class="chat-view">
+    <header class="chat-header">
+      <div>
+        <h1>当前对话</h1>
+      </div>
+      <div class="header-actions">
+        <span
+          v-for="pill in featurePills"
+          :key="pill.text"
+          :class="['model-pill', pill.tone]"
+        >
+          <i :class="pill.icon"></i> {{ pill.text }}
+        </span>
+      </div>
+    </header>
 
-    <!-- Message list -->
-    <div class="flex-grow-1 overflow-auto p-3" ref="messagesContainer">
-      <div v-if="messages.length === 0 && !isInSupportMode" class="text-center text-muted mt-5">
-        <p>开始新的对话</p>
-        <button @click="handleNew" class="btn btn-primary">新建对话</button>
+    <section class="messages" ref="messagesContainer" @scroll="handleMessagesScroll">
+      <div v-if="!messages.length" class="empty-state">
+        <div class="empty-card">
+          <div class="empty-icon"><i class="bi bi-shield-check"></i></div>
+          <h2>开始一次法律咨询</h2>
+          <p>系统将结合公司法知识库、意图重构、RAG 检索与分层记忆，生成带依据的结构化回答。</p>
+          <div class="suggestions">
+            <button type="button" @click="useSuggestion('我是小股东，公司一直不给我看账，我能起诉吗？')">股东查账权</button>
+            <button type="button" @click="useSuggestion('股东想把股权转给外部人员，其他股东不同意怎么办？')">股权转让</button>
+            <button type="button" @click="useSuggestion('公司被吊销后一直不清算，债权人可以怎么办？')">解散清算</button>
+          </div>
+        </div>
       </div>
       <ChatBubble
         v-for="(msg, index) in messages"
         :key="`${msg.timestamp}-${index}`"
         :role="msg.role"
         :content="msg.content"
+        :progress="msg.progress || ''"
         :timestamp="msg.timestamp"
+        :mode="msg.mode"
+        :citations="msg.citations || []"
       />
-      <!-- Loading indicator -->
-      <div v-if="isLoading && !isInSupportMode" class="text-center mt-3">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">加载中...</span>
-        </div>
-        <p class="text-muted mt-2">AI正在思考中...</p>
-      </div>
-    </div>
+    </section>
 
-    <!-- Input box -->
-    <div class="border-top p-3 bg-white">
-      <form @submit.prevent="handleSubmit">
-        <div class="input-group">
-          <input
-            v-model="inputText"
-            type="text"
-            class="form-control form-control-lg"
-            placeholder="输入您的法律问题..."
-            :disabled="isLoading && !isInSupportMode"
-            required
-          />
-          <button
-            type="submit"
-            class="btn btn-primary btn-lg"
-            :disabled="(isLoading && !isInSupportMode) || !inputText.trim()"
-          >
-            <span v-if="isLoading && !isInSupportMode" class="spinner-border spinner-border-sm me-1" role="status"></span>
-            发送
+    <section class="composer-shell">
+      <div class="mode-panel">
+        <span class="mode-label"><i class="bi bi-sliders"></i> 回答模式</span>
+        <div class="mode-switch">
+          <button type="button" :class="['mode-btn', mode === 'normal' ? 'active' : '']" @click="mode = 'normal'">
+            <i class="bi bi-chat-dots"></i> Normal
+          </button>
+          <button type="button" :class="['mode-btn', mode === 'plus' ? 'active' : '']" @click="mode = 'plus'">
+            <i class="bi bi-stars"></i> Plus
           </button>
         </div>
+        <span class="mode-tip">{{ supportActive ? '已进入人工客服实时通道，后续消息将发送给在线客服。' : 'Normal 为轻量知识问答链路；Plus 为完整意图识别、多层记忆与多意图检索链路。' }}</span>
+      </div>
+      <form class="input-card" @submit.prevent="handleSubmit">
+        <textarea
+          v-model="inputText"
+          rows="2"
+          :placeholder="supportActive ? '已转人工，请继续输入要发送给客服的消息' : '输入您的公司法问题，例如：我是小股东，公司不给我看账怎么办？'"
+          :disabled="isLoading"
+          @keydown.enter.exact.prevent="handleSubmit"
+        />
+        <button class="send-btn" type="submit" :disabled="isLoading || !inputText.trim()">
+          <i :class="isLoading ? 'bi bi-hourglass-split' : 'bi bi-send-fill'"></i>
+          <span>{{ isLoading ? '生成中' : (supportActive ? '发给客服' : '发送') }}</span>
+        </button>
       </form>
-    </div>
-  </div>
+    </section>
+  </main>
 </template>
 
 <script>
 import ChatBubble from '../components/ChatBubble.vue';
-import { sendQuery, getConversation } from '../api';
+import { createSupportSocket, getConversation, streamChat } from '../api';
 
 export default {
   components: { ChatBubble },
-  props: ['conversationId'],
-  emits: ['update-conversation-id', 'new'],
+  props: {
+    conversationId: { type: String, default: null },
+  },
+  emits: ['new', 'refresh'],
   data() {
     return {
       messages: [],
       inputText: '',
+      mode: 'normal',
       isLoading: false,
-      currentRequestId: 0,
-      socket: null,
-      isInSupportMode: false,    //  Whether in human support mode
-      isWaitingSupport: false,   //  Whether in human support mode
-      isSupportConnected: false, //  Whether in human support mode
-      supportConversationId: null, // conversation ID
-      supportPollInterval: null // poll interval
+      activeAssistantIndex: -1,
+      supportActive: false,
+      supportSocket: null,
+      shouldAutoScroll: true,
     };
   },
-  watch: {
-    // conversationId: {
-    //   immediate: true,
-    //   async handler(newId) {
-    //     if (newId) {
-    //       await this.loadConversation(newId);
-    //       // 连接WebSocket
-    //       this.connectWebSocket(newId);
-    //     } else {
-    //       this.messages = [];
-    //       this.closeWebSocket();
-    //     }
-    //   }
-    // },
-    isWaitingSupport: {
-      async handler(isWaiting) {
-        if (isWaiting) {
-          // load
-          await this.loadConversation(this.conversationId);
-          this.connectWebSocket(this.conversationId);
-
-          //this.pollForSupport();
-        } else {
-
-          if (this.supportPollInterval) {
-            clearInterval(this.supportPollInterval);
-            this.supportPollInterval = null;
-          }
-        }
-      },
-      immediate: true
-    }
+  computed: {
+    featurePills() {
+      if (this.mode === 'normal') {
+        return [
+          { text: 'qwen3.6-flash', icon: 'bi bi-cpu', tone: '' },
+          { text: '微记忆', icon: 'bi bi-clock-history', tone: 'subtle' },
+          { text: '基础检索', icon: 'bi bi-search', tone: 'success' },
+        ];
+      }
+      return [
+        { text: 'qwen3.6-max-preview', icon: 'bi bi-cpu', tone: '' },
+        { text: 'flash 意图识别', icon: 'bi bi-lightning-charge', tone: 'subtle' },
+        { text: '三层记忆', icon: 'bi bi-diagram-3', tone: 'success' },
+        { text: '强化检索', icon: 'bi bi-search-heart', tone: 'warning' },
+        { text: '强推理', icon: 'bi bi-stars', tone: 'danger' },
+      ];
+    },
   },
-  methods: {
-    async loadConversation(id) {
-      try {
-        const data = await getConversation(id);
-        this.messages = data.messages;
-        this.$emit('update-conversation-id', id);
-      } catch (error) {
-        console.error('加载对话失败:', error);
+  async created() {
+    if (this.conversationId) await this.loadConversation(this.conversationId);
+  },
+  beforeUnmount() {
+    this.closeSupportSocket();
+  },
+  watch: {
+    async conversationId(id) {
+      if (this.isLoading) return;
+      this.supportActive = false;
+      this.closeSupportSocket();
+      if (id) {
+        await this.loadConversation(id);
+      } else {
         this.messages = [];
       }
     },
-    async pollForSupport() {
-      if (!this.isWaitingSupport) return;
-
-
-      const conversationId = this.conversationId;
-      if (!conversationId) return;
-
+  },
+  methods: {
+    useSuggestion(text) {
+      this.inputText = text;
+    },
+    async loadConversation(id) {
       try {
-        // connect WebSocket
-        this.connectWebSocket(conversationId);
+        const data = await getConversation(id);
+        this.messages = data.messages || [];
+        this.supportActive = data.status === 'support';
+        if (this.supportActive) {
+          this.openSupportSocket(id);
+        }
+        this.shouldAutoScroll = true;
+        this.$nextTick(this.scrollToBottom);
       } catch (error) {
-        console.error('轮询客服状态失败:', error);
-      }
-
-      // 5 seconds
-      if (this.isWaitingSupport) {
-        this.supportPollInterval = setTimeout(() => {
-          this.pollForSupport();
-        }, 5000);
-      }
-    },
-    connectWebSocket(conversationId) {
-      this.closeWebSocket();
-
-      this.socket = new WebSocket(`ws://localhost:8000/ws/user/${conversationId}`);
-
-      this.socket.onopen = () => {
-        console.log('WebSocket连接已打开');
-      };
-
-      this.socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('收到消息:', data);
-
-        if (data.type === 'new_message' && data.message.sender === 'support') {
-
-          this.messages.push({
-            role: 'assistant',
-            content: `客服: ${data.message.content}`,
-            timestamp: data.message.timestamp
-          });
-          this.scrollToBottom();
-        } else if (data.type === 'support_connected') {
-
-          this.isWaitingSupport = false;
-          this.isSupportConnected = true;
-          this.isInSupportMode = true;
-          this.messages.push({
-            role: 'system',
-            content: data.message,
-            timestamp: new Date().toISOString()
-          });
-        } else if (data.type === 'support_disconnected') {
-
-          this.isSupportConnected = false;
-          this.isWaitingSupport = true;
-          this.messages.push({
-            role: 'system',
-            content: data.message,
-            timestamp: new Date().toISOString()
-          });
-        }
-      };
-
-      this.socket.onclose = () => {
-        console.log('WebSocket连接已关闭');
-        if (this.isInSupportMode) {
-          setTimeout(() => this.connectWebSocket(this.conversationId), 3000);
-        }
-      };
-    },
-    closeWebSocket() {
-      if (this.socket) {
-        this.socket.close();
-        this.socket = null;
+        console.error(error);
+        this.messages = [];
       }
     },
     async handleSubmit() {
-      if (!this.conversationId) {
-        this.$emit('new');
-        return;
-      }
-
       const query = this.inputText.trim();
-      if (!query) return;
-
-      // If in support mode, send message via WebSocket
-      if (this.isInSupportMode) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-          this.socket.send(query);
-
-          this.messages.push({
-            role: 'user',
-            content: query,
-            timestamp: new Date().toISOString()
-          });
-          this.inputText = '';
-          this.scrollToBottom();
-        }
+      if (!query || this.isLoading) return;
+      if (this.supportActive) {
+        await this.handleSupportSubmit(query);
         return;
       }
-
-      // Otherwise, proceed with AI processing flow
-      const requestId = Date.now();
-      this.currentRequestId = requestId;
-
-      // Add user message
-      const userMsg = {
-        role: 'user',
-        content: query,
-        timestamp: new Date().toISOString()
-      };
-      this.messages.push(userMsg);
-      this.inputText = '';
       this.isLoading = true;
-
+      let conversationId = this.conversationId;
       try {
-        const response = await sendQuery(this.conversationId, query);
-
-        // Check if this is the latest request
-        if (this.currentRequestId === requestId) {
-          // if human handoff is needed
-          if (response.need_human) {
-            this.isInSupportMode = true;
-            this.isWaitingSupport = true;
-            this.messages.push({
-              role: 'system',
-              content: '您已请求转人工，正在等待客服接入...',
-              timestamp: new Date().toISOString()
-            });
-          } else {
-
-            this.messages = response.messages;
-            // update conversation_id
-            this.$emit('update-conversation-id', response.conversation_id);
-          }
+        if (!conversationId) {
+          conversationId = await this.ensureConversation();
         }
       } catch (error) {
-        console.error('发送失败:', error);
+        console.error('创建会话失败，无法发送消息', error);
+        this.isLoading = false;
+        return;
+      }
+      if (!conversationId) {
+        console.error('创建会话失败，无法发送消息');
+        this.isLoading = false;
+        return;
+      }
+      this.inputText = '';
+      this.shouldAutoScroll = true;
 
-        if (this.currentRequestId === requestId) {
-          // Remove previously added user message
-          this.messages = this.messages.filter(msg =>
-            !(msg.role === 'user' && msg.content === query)
-          );
+      this.messages.push({
+        role: 'user',
+        content: query,
+        timestamp: new Date().toISOString(),
+        mode: this.mode,
+        citations: [],
+      });
+      this.messages.push({
+        role: 'assistant',
+        content: '',
+        progress: '准备处理请求',
+        timestamp: new Date().toISOString(),
+        mode: this.mode,
+        citations: [],
+      });
+      this.activeAssistantIndex = this.messages.length - 1;
+      this.$nextTick(this.scrollToBottom);
 
-          // error
-          this.messages.push({
-            role: 'assistant',
-            content: '抱歉，服务暂时不可用，请稍后再试。',
-            timestamp: new Date().toISOString()
-          });
-
-          // reload
-          await this.loadConversation(this.conversationId);
-        }
+      try {
+        await streamChat({
+          conversationId,
+          query,
+          mode: this.mode,
+          onEvent: this.handleStreamEvent,
+        });
+        this.$emit('refresh');
+      } catch (error) {
+        const msg = this.messages[this.activeAssistantIndex];
+        if (msg) msg.content += '\n\n请求失败，请检查后端服务或模型配置。';
+        console.error(error);
       } finally {
-        if (this.currentRequestId === requestId) {
-          this.isLoading = false;
-          this.scrollToBottom();
-        }
+        this.isLoading = false;
+        this.activeAssistantIndex = -1;
       }
     },
-    handleNew() {
-      this.closeWebSocket();
-      this.isInSupportMode = false;
-      this.isWaitingSupport = false;
-      this.isSupportConnected = false;
-      this.$emit('new');
+    ensureConversation() {
+      return new Promise((resolve) => {
+        this.$emit('new', resolve);
+      });
+    },
+    handleStreamEvent({ event, data }) {
+      const msg = this.messages[this.activeAssistantIndex];
+      if (!msg) return;
+      if (event === 'token') {
+        msg.progress = '';
+        msg.content += data.content || '';
+      } else if (event === 'citations') {
+        msg.citations = data.citations || [];
+      } else if (event === 'intent') {
+        msg.intent = data;
+      } else if (event === 'progress') {
+        msg.progress = data.message || '';
+      } else if (event === 'handoff') {
+        msg.handoff = data;
+        this.supportActive = true;
+        this.openSupportSocket(data.conversation_id || this.conversationId);
+      }
+      this.$nextTick(this.scrollToBottomIfPinned);
+    },
+    async handleSupportSubmit(query) {
+      let conversationId = this.conversationId;
+      if (!conversationId) {
+        conversationId = await this.ensureConversation();
+      }
+      if (!conversationId) return;
+      this.inputText = '';
+      this.shouldAutoScroll = true;
+      this.messages.push({
+        role: 'user',
+        content: query,
+        timestamp: new Date().toISOString(),
+        mode: '人工客服',
+        citations: [],
+      });
+      this.openSupportSocket(conversationId);
+      const payload = JSON.stringify({ message: query });
+      if (this.supportSocket && this.supportSocket.readyState === WebSocket.OPEN) {
+        this.supportSocket.send(payload);
+      } else if (this.supportSocket) {
+        this.supportSocket.addEventListener('open', () => this.supportSocket.send(payload), { once: true });
+      }
+      this.$nextTick(this.scrollToBottom);
+    },
+    openSupportSocket(conversationId) {
+      if (!conversationId) return;
+      if (this.supportSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(this.supportSocket.readyState)) {
+        return;
+      }
+      this.supportSocket = createSupportSocket(conversationId, {
+        onMessage: this.handleSupportSocketMessage,
+        onClose: () => {
+          this.supportSocket = null;
+        },
+        onError: (error) => {
+          console.error('人工客服 WebSocket 异常', error);
+        },
+      });
+    },
+    closeSupportSocket() {
+      if (this.supportSocket) {
+        this.supportSocket.close();
+        this.supportSocket = null;
+      }
+    },
+    handleSupportSocketMessage(data) {
+      if (data.sender === 'support') {
+        this.messages.push({
+          role: 'assistant',
+          content: data.message || '',
+          timestamp: data.timestamp || new Date().toISOString(),
+          mode: '人工客服',
+          citations: [],
+        });
+      } else if (data.type === 'system') {
+        this.messages.push({
+          role: 'system',
+          content: data.message || '人工客服通道状态已更新。',
+          timestamp: data.timestamp || new Date().toISOString(),
+          mode: '人工客服',
+          citations: [],
+        });
+      }
+      this.$nextTick(this.scrollToBottomIfPinned);
+    },
+    handleMessagesScroll() {
+      this.shouldAutoScroll = this.isNearBottom();
+    },
+    isNearBottom(threshold = 96) {
+      const el = this.$refs.messagesContainer;
+      if (!el) return true;
+      return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    },
+    scrollToBottomIfPinned() {
+      if (this.shouldAutoScroll) {
+        this.scrollToBottom();
+      }
     },
     scrollToBottom() {
-      this.$nextTick(() => {
-        const container = this.$refs.messagesContainer;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
-    }
+      const el = this.$refs.messagesContainer;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        this.shouldAutoScroll = true;
+      }
+    },
   },
-  mounted() {
-    this.scrollToBottom();
-  },
-  updated() {
-    this.scrollToBottom();
-  },
-  beforeUnmount() {
-    this.closeWebSocket();
-  }
-}
+};
 </script>
-
-<style scoped>
-.chat-container {
-  background: #f8f9fa;
-  flex: 1;
-  min-width: 0;
-}
-</style>
