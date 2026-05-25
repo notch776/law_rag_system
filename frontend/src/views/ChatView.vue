@@ -5,6 +5,9 @@
         <h1>当前对话</h1>
       </div>
       <div class="header-actions">
+        <button type="button" class="case-info-btn" @click="openCasePanel">
+          <i class="bi bi-clipboard2-data"></i> 当前案例信息
+        </button>
         <span
           v-for="pill in featurePills"
           :key="pill.text"
@@ -40,6 +43,47 @@
       />
     </section>
 
+    <section v-if="casePanelOpen" class="case-slot-backdrop" @click.self="closeCasePanel">
+      <div class="case-slot-panel">
+        <header class="case-slot-header">
+          <div>
+            <div class="eyebrow">CASE PROFILE</div>
+            <h2>当前案例信息</h2>
+            <p>这些槽位会随 Plus 意图识别自动更新，也可以由用户手动修正后保存。</p>
+          </div>
+          <button type="button" class="case-close-btn" @click="closeCasePanel">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </header>
+        <div class="case-active-row">
+          <label>当前场景</label>
+          <select v-model="caseSlotDraft.active_scenario">
+            <option value="general">未确定</option>
+            <option v-for="scenario in scenarioKeys" :key="scenario" :value="scenario">
+              {{ scenarioLabels[scenario] }}
+            </option>
+          </select>
+        </div>
+        <div class="case-slot-sections">
+          <section v-for="scenario in scenarioKeys" :key="scenario" class="case-slot-section">
+            <h3>{{ scenarioLabels[scenario] }}</h3>
+            <div class="case-slot-grid">
+              <label v-for="field in slotFields[scenario]" :key="field" class="case-slot-field">
+                <span>{{ slotLabels[field] || field }}</span>
+                <input v-model="caseSlotDraft[scenario][field]" :placeholder="`填写${slotLabels[field] || field}`" />
+              </label>
+            </div>
+          </section>
+        </div>
+        <footer class="case-slot-footer">
+          <span>{{ caseSlotSaving ? '保存中...' : '保存后下次 Plus 意图识别会使用这份案例信息。' }}</span>
+          <button type="button" class="case-save-btn" :disabled="caseSlotSaving" @click="saveCaseSlots">
+            <i class="bi bi-save"></i> 保存
+          </button>
+        </footer>
+      </div>
+    </section>
+
     <section class="composer-shell">
       <div class="mode-panel">
         <span class="mode-label"><i class="bi bi-sliders"></i> 回答模式</span>
@@ -72,7 +116,7 @@
 
 <script>
 import ChatBubble from '../components/ChatBubble.vue';
-import { createSupportSocket, getConversation, streamChat } from '../api';
+import { createSupportSocket, getCaseSlots, getConversation, streamChat, updateCaseSlots } from '../api';
 
 export default {
   components: { ChatBubble },
@@ -90,9 +134,47 @@ export default {
       supportActive: false,
       supportSocket: null,
       shouldAutoScroll: true,
+      casePanelOpen: false,
+      caseSlotSaving: false,
+      caseSlots: this.emptyCaseSlots(),
+      caseSlotDraft: this.emptyCaseSlots(),
+      scenarioLabels: {
+        shareholder_governance: '股东治理与权利',
+        equity_transfer_capital: '股权转让与出资',
+        dissolution_liquidation: '解散清算与债权保护',
+      },
+      slotLabels: {
+        company_type: '公司类型',
+        user_role: '用户身份',
+        shareholding_ratio: '持股比例',
+        dispute_action: '争议行为',
+        requested_right: '请求权利',
+        company_response: '公司回应',
+        evidence: '证据材料',
+        desired_remedy: '期望救济',
+        transfer_subject: '转让标的',
+        capital_contribution_status: '出资状态',
+        other_shareholders_notice: '其他股东通知',
+        preemptive_right_dispute: '优先购买权争议',
+        payment_or_price: '价款/价格',
+        company_status: '公司状态',
+        dissolution_reason: '解散原因',
+        liquidation_status: '清算状态',
+        creditor_or_shareholder_claim: '债权人/股东主张',
+        debt_or_asset_info: '债务/资产信息',
+        responsible_party: '责任主体',
+      },
+      slotFields: {
+        shareholder_governance: ['company_type', 'user_role', 'shareholding_ratio', 'dispute_action', 'requested_right', 'company_response', 'evidence', 'desired_remedy'],
+        equity_transfer_capital: ['company_type', 'user_role', 'transfer_subject', 'capital_contribution_status', 'other_shareholders_notice', 'preemptive_right_dispute', 'payment_or_price', 'desired_remedy'],
+        dissolution_liquidation: ['company_status', 'user_role', 'dissolution_reason', 'liquidation_status', 'creditor_or_shareholder_claim', 'debt_or_asset_info', 'responsible_party', 'desired_remedy'],
+      },
     };
   },
   computed: {
+    scenarioKeys() {
+      return ['shareholder_governance', 'equity_transfer_capital', 'dissolution_liquidation'];
+    },
     featurePills() {
       if (this.mode === 'normal') {
         return [
@@ -125,10 +207,59 @@ export default {
         await this.loadConversation(id);
       } else {
         this.messages = [];
+        this.caseSlots = this.emptyCaseSlots();
+        this.caseSlotDraft = this.emptyCaseSlots();
       }
     },
   },
   methods: {
+    emptyCaseSlots() {
+      return {
+        active_scenario: 'general',
+        shareholder_governance: {
+          company_type: null,
+          user_role: null,
+          shareholding_ratio: null,
+          dispute_action: null,
+          requested_right: null,
+          company_response: null,
+          evidence: null,
+          desired_remedy: null,
+        },
+        equity_transfer_capital: {
+          company_type: null,
+          user_role: null,
+          transfer_subject: null,
+          capital_contribution_status: null,
+          other_shareholders_notice: null,
+          preemptive_right_dispute: null,
+          payment_or_price: null,
+          desired_remedy: null,
+        },
+        dissolution_liquidation: {
+          company_status: null,
+          user_role: null,
+          dissolution_reason: null,
+          liquidation_status: null,
+          creditor_or_shareholder_claim: null,
+          debt_or_asset_info: null,
+          responsible_party: null,
+          desired_remedy: null,
+        },
+      };
+    },
+    cloneCaseSlots(state) {
+      return JSON.parse(JSON.stringify(state || this.emptyCaseSlots()));
+    },
+    normalizeCaseSlots(state) {
+      const base = this.emptyCaseSlots();
+      const source = state || {};
+      base.active_scenario = source.active_scenario || 'general';
+      this.scenarioKeys.forEach((scenario) => {
+        base[scenario] = { ...base[scenario], ...(source[scenario] || {}) };
+      });
+      return base;
+    },
     useSuggestion(text) {
       this.inputText = text;
     },
@@ -136,6 +267,8 @@ export default {
       try {
         const data = await getConversation(id);
         this.messages = data.messages || [];
+        this.caseSlots = this.normalizeCaseSlots(data.case_slot_state);
+        this.caseSlotDraft = this.cloneCaseSlots(this.caseSlots);
         this.supportActive = data.status === 'support';
         if (this.supportActive) {
           this.openSupportSocket(id);
@@ -145,6 +278,44 @@ export default {
       } catch (error) {
         console.error(error);
         this.messages = [];
+      }
+    },
+    async loadCaseSlots(id) {
+      if (!id) return;
+      const data = await getCaseSlots(id);
+      this.caseSlots = this.normalizeCaseSlots(data);
+      this.caseSlotDraft = this.cloneCaseSlots(this.caseSlots);
+    },
+    async openCasePanel() {
+      let conversationId = this.conversationId;
+      if (!conversationId) {
+        conversationId = await this.ensureConversation();
+      }
+      if (conversationId) {
+        await this.loadCaseSlots(conversationId);
+      }
+      this.casePanelOpen = true;
+    },
+    closeCasePanel() {
+      this.casePanelOpen = false;
+      this.caseSlotDraft = this.cloneCaseSlots(this.caseSlots);
+    },
+    async saveCaseSlots() {
+      let conversationId = this.conversationId;
+      if (!conversationId) {
+        conversationId = await this.ensureConversation();
+      }
+      if (!conversationId) return;
+      this.caseSlotSaving = true;
+      try {
+        const saved = await updateCaseSlots(conversationId, this.normalizeCaseSlots(this.caseSlotDraft));
+        this.caseSlots = this.normalizeCaseSlots(saved);
+        this.caseSlotDraft = this.cloneCaseSlots(this.caseSlots);
+        this.casePanelOpen = false;
+      } catch (error) {
+        console.error('保存案例信息失败', error);
+      } finally {
+        this.caseSlotSaving = false;
       }
     },
     async handleSubmit() {
@@ -223,6 +394,12 @@ export default {
         msg.citations = data.citations || [];
       } else if (event === 'intent') {
         msg.intent = data;
+        if (data.case_slot_state) {
+          this.caseSlots = this.normalizeCaseSlots(data.case_slot_state);
+          if (!this.casePanelOpen) {
+            this.caseSlotDraft = this.cloneCaseSlots(this.caseSlots);
+          }
+        }
       } else if (event === 'progress') {
         msg.progress = data.message || '';
       } else if (event === 'handoff') {

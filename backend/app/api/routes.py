@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.schemas.chat import ChatRequest
+from app.schemas.chat import CaseSlotState, ChatRequest
 
 
 def create_router(container):
@@ -19,6 +19,14 @@ def create_router(container):
     @router.get("/conversations")
     async def list_conversations():
         return await container.conversation.list()
+
+    @router.get("/conversations/{conversation_id}/case-slots")
+    async def get_case_slots(conversation_id: str):
+        return await container.mongo.get_case_slot_state(conversation_id)
+
+    @router.put("/conversations/{conversation_id}/case-slots")
+    async def update_case_slots(conversation_id: str, state: CaseSlotState):
+        return await container.mongo.update_case_slot_state(conversation_id, state.model_dump())
 
     @router.get("/conversations/{conversation_id}")
     async def get_conversation(conversation_id: str):

@@ -13,6 +13,22 @@ export async function getConversation(conversationId) {
   return response.json();
 }
 
+export async function getCaseSlots(conversationId) {
+  const response = await fetch(`${API_BASE}/conversations/${conversationId}/case-slots`);
+  if (!response.ok) throw new Error('加载案例信息失败');
+  return response.json();
+}
+
+export async function updateCaseSlots(conversationId, caseSlotState) {
+  const response = await fetch(`${API_BASE}/conversations/${conversationId}/case-slots`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(caseSlotState),
+  });
+  if (!response.ok) throw new Error('保存案例信息失败');
+  return response.json();
+}
+
 export async function createNewConversation() {
   const response = await fetch(`${API_BASE}/conversations`, { method: 'POST' });
   if (!response.ok) throw new Error('新建会话失败');

@@ -4,7 +4,7 @@ from time import perf_counter
 from typing import AsyncGenerator, List
 from app.core.config import settings
 from app.repositories.mongo_repo import MongoRepository
-from app.schemas.chat import ChatRequest, ChatResponse, Citation, IntentAnalysis, IntentItem
+from app.schemas.chat import CaseSlotState, ChatRequest, ChatResponse, Citation, IntentAnalysis, IntentItem
 from app.services.conversation_service import ConversationService
 from app.services.guardrail_service import GuardrailService
 from app.services.intent_service import IntentService
@@ -84,17 +84,21 @@ class QAOrchestrator:
             return
 
         normal_mode = request.mode == "normal"
+        case_slot_state = await self.mongo.get_case_slot_state(request.conversation_id)
         if normal_mode:
             analysis = IntentAnalysis(
                 query_type="knowledge_qa",
                 matched_scenario="general",
                 intents=[IntentItem(intent_id="I1", intent_name="默认法律知识问答", rewritten_query=request.query)],
                 slots={},
+                case_slot_state=case_slot_state,
             )
             mark("normal_default_route", query_type=analysis.query_type, intents=len(analysis.intents))
         else:
             yield self._progress("intent", "意图识别中")
-            analysis = self.intent.analyze(request.query)
+            analysis = self.intent.analyze(request.query, case_slot_state=case_slot_state)
+            case_slot_state = await self.mongo.update_case_slot_state(request.conversation_id, analysis.case_slot_state.model_dump())
+            analysis.case_slot_state = CaseSlotState(**case_slot_state)
             mark("intent_analysis", query_type=analysis.query_type, intents=len(analysis.intents))
         yield self._event("intent", analysis.model_dump())
         if not normal_mode and (analysis.need_human or analysis.query_type == "human_handoff"):
@@ -196,7 +200,7 @@ class QAOrchestrator:
         yield self._progress("generation", "生成回答中")
         answer_parts: List[str] = []
         if not normal_mode:
-            draft_messages = self._build_draft_messages(request.query, citations, memory_context, follow_up=follow_up)
+            draft_messages = self._build_draft_messages(request.query, analysis.model_dump(), citations, memory_context, follow_up=follow_up)
             draft_start = perf_counter()
             draft_first_token = False
             yield self._progress("draft_generation", "生成简短初答中")
@@ -268,6 +272,7 @@ class QAOrchestrator:
 
     def _build_generation_messages(self, query, analysis, citations, memory_context, mode="plus", follow_up=False):
         context = "\n\n".join([f"[{c.citation_id}]《{c.law_name}》{c.article_id} 来源:{c.filename}\n{c.content}" for c in citations]) or "未检索到可靠法律条文。"
+        prompt_analysis = self._trim_prompt_analysis(analysis)
         if mode == "normal":
             system = """你是企业公司法咨询助手。请严格基于检索资料回答，不得伪造法条。
 Normal 模式要求回答简洁，结构只使用：
@@ -285,10 +290,12 @@ Normal 模式要求回答简洁，结构只使用：
             return [{"role": "system", "content": system}, {"role": "user", "content": user}]
         if follow_up:
             system = """你是企业公司法咨询助手。必须严格基于检索资料和会话记忆回答，不得伪造法条。
+事实优先级规则：当前【意图识别与槽位】中的 case_slot_state/slots 是用户最新确认或手动修正的案件事实，优先级高于【会话记忆】。如果槽位与记忆冲突，必须以槽位为准；例如记忆中持股比例为 12%，但当前槽位为 15%，回答必须按 15% 分析，不得沿用旧记忆。
 当前问题是追问或多轮承接问题：如果上一轮已经做过完整结构化分析，本轮不要机械重复五段式；请直接、自然地回答用户当前追问。
 回答应优先解决当前问题，必要时用简短小标题组织；若出现新的法律争点或重要事实，再补充法律依据和建议。"""
         else:
             system = """你是企业公司法咨询助手。必须严格基于检索资料和会话记忆回答，不得伪造法条。
+事实优先级规则：当前【意图识别与槽位】中的 case_slot_state/slots 是用户最新确认或手动修正的案件事实，优先级高于【会话记忆】。如果槽位与记忆冲突，必须以槽位为准；例如记忆中持股比例为 12%，但当前槽位为 15%，回答必须按 15% 分析，不得沿用旧记忆。
 首次或复杂问题时回答采用：
 【法律依据】、【事实认定】、【法律分析】、【结论与建议】、【参考来源】。
 避免绝对化承诺；如果事实不足，先指出缺失事实并给出需要补充的问题。"""
@@ -296,7 +303,7 @@ Normal 模式要求回答简洁，结构只使用：
 {query}
 
 【意图识别与槽位】
-{json.dumps(analysis, ensure_ascii=False)}
+{json.dumps(prompt_analysis, ensure_ascii=False)}
 
 【会话记忆】
 {memory_context or '无'}
@@ -306,16 +313,21 @@ Normal 模式要求回答简洁，结构只使用：
 """
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
-    def _build_draft_messages(self, query, citations, memory_context, follow_up=False):
+    def _build_draft_messages(self, query, analysis, citations, memory_context, follow_up=False):
         context = "\n".join([f"[{c.citation_id}]《{c.law_name}》{c.article_id}: {c.content[:180]}" for c in citations[:3]]) or "未检索到可靠法律条文。"
+        prompt_analysis = self._trim_prompt_analysis(analysis)
         instruction = "这是追问问题，请结合会话记忆直接回答当前问题。" if follow_up else "请先给出一个可读的简短初答。"
         system = """你是企业公司法咨询助手。请用 qwen3.6-flash 快速生成简短初答，降低用户等待。
+事实优先级规则：当前【意图识别与槽位】中的 case_slot_state/slots 是用户最新确认或手动修正的案件事实，优先级高于【压缩记忆】。如果槽位与记忆冲突，必须以槽位为准；例如记忆中持股比例为 12%，但当前槽位为 15%，初答必须按 15% 给出判断。
 要求：只给核心判断、关键依据和下一步建议；不要展开长篇论证；不得伪造法条；控制在 200-350 字。"""
         user = f"""【任务】
 {instruction}
 
 【用户问题】
 {query}
+
+【意图识别与槽位】
+{json.dumps(prompt_analysis, ensure_ascii=False)}
 
 【压缩记忆】
 {memory_context or '无'}
@@ -331,6 +343,25 @@ Normal 模式要求回答简洁，结构只使用：
             "这件事", "这类", "这种", "他", "她", "它", "小明", "补充", "再说", "进一步",
         ]
         return bool(memory_context) and any(marker in query for marker in markers)
+
+    def _trim_prompt_analysis(self, analysis):
+        prompt_analysis = dict(analysis or {})
+        case_slot_state = (prompt_analysis.get("case_slot_state") or {}).copy()
+        if not case_slot_state:
+            return prompt_analysis
+        trimmed_slot_state = {"active_scenario": case_slot_state.get("active_scenario", "general")}
+        for scenario in ["shareholder_governance", "equity_transfer_capital", "dissolution_liquidation"]:
+            slot_values = case_slot_state.get(scenario) or {}
+            if self._has_any_slot_value(slot_values):
+                trimmed_slot_state[scenario] = slot_values
+        if len(trimmed_slot_state) == 1 and trimmed_slot_state.get("active_scenario") == "general":
+            prompt_analysis["case_slot_state"] = {}
+        else:
+            prompt_analysis["case_slot_state"] = trimmed_slot_state
+        return prompt_analysis
+
+    def _has_any_slot_value(self, slot_values):
+        return any(value not in (None, "", [], {}) for value in (slot_values or {}).values())
 
     def _event(self, name, data):
         return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

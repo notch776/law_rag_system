@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import DESCENDING
 from app.core.config import settings
+from app.schemas.chat import CaseSlotState
 
 
 def beijing_time():
@@ -31,6 +32,7 @@ class MongoRepository:
             "status": "active",
             "messages": [],
             "support_messages": [],
+            "case_slot_state": CaseSlotState().model_dump(),
             "created_at": now,
             "updated_at": now,
         })
@@ -52,6 +54,7 @@ class MongoRepository:
             "status": "active",
             "messages": [],
             "support_messages": [],
+            "case_slot_state": CaseSlotState().model_dump(),
             "created_at": now,
             "updated_at": now,
         })
@@ -95,6 +98,20 @@ class MongoRepository:
 
     async def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         return await self.conversations.find_one({"conversation_id": conversation_id})
+
+    async def get_case_slot_state(self, conversation_id: str) -> Dict[str, Any]:
+        await self.ensure_conversation(conversation_id)
+        doc = await self.conversations.find_one({"conversation_id": conversation_id}, {"case_slot_state": 1})
+        return (doc or {}).get("case_slot_state") or CaseSlotState().model_dump()
+
+    async def update_case_slot_state(self, conversation_id: str, case_slot_state: Dict[str, Any]) -> Dict[str, Any]:
+        await self.ensure_conversation(conversation_id)
+        normalized = CaseSlotState(**(case_slot_state or {})).model_dump()
+        await self.conversations.update_one(
+            {"conversation_id": conversation_id},
+            {"$set": {"case_slot_state": normalized, "updated_at": beijing_time()}},
+        )
+        return normalized
 
     async def set_conversation_status(self, conversation_id: str, status: str):
         await self.ensure_conversation(conversation_id)
