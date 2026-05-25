@@ -31,17 +31,6 @@ DashScope API integration for Qwen-Max LLM
 Local deployment of BGE-reranker-large re-ranking model and fine tuning using Q-D pairs dataset  
 Embedding generation via Alibaba Cloud Text Embedding Model v4  
 
-## User Manual
-This is a corporate law domain-specific multi-turn conversation RAG system. Users can initiate new dialogues to inquire about corporate law matters, with responses generated based on authoritative legal data. Follow-up questions are supported within dialogues, though new dialogues are recommended for unrelated topics. Historical dialogues can be resumed through the left-side conversation panel using question/ timestamp metadata. The system maintains contextual continuity while optimizing token economy through intelligent context management.  
-<img width="2475" height="1372" alt="image" src="https://github.com/user-attachments/assets/880ddb9e-1142-4e23-a902-dd01095bbb7e" />
-<img width="2481" height="1371" alt="image" src="https://github.com/user-attachments/assets/0bc803bd-8c38-4817-9b46-428e0d25214c" />
-<img width="3826" height="2032" alt="image" src="https://github.com/user-attachments/assets/65ef9056-ea31-4f5c-bfbb-5e855d77df90" />
-<img width="2188" height="1399" alt="image" src="https://github.com/user-attachments/assets/b0a29c79-0963-4f43-a933-b5abc21ed8c0" />
-<img width="2238" height="1530" alt="image" src="https://github.com/user-attachments/assets/7fa65266-51b6-4326-8696-48a680593ec2" />
-
-## Algorithm Process Overview
-<img width="1628" height="1084" alt="image" src="https://github.com/user-attachments/assets/591141b5-9eca-4c8e-bf1d-eec91a541de8" />
-<img width="1482" height="839" alt="image" src="https://github.com/user-attachments/assets/e18dc766-68cb-4d29-8f36-24797e07ace8" />
 
 ## Test Case
 Question: Under Article 232 of the Company Law, which scenarios listed in Article 229 require the company to undergo liquidation?  
