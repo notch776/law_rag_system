@@ -31,9 +31,9 @@ DashScope API integration for Qwen-Max LLM
 Local deployment of BGE-reranker-large re-ranking model and fine tuning using Q-D pairs dataset  
 Embedding generation via Alibaba Cloud Text Embedding Model v4  
 
-<img width="363" height="197" alt="image" src="https://github.com/user-attachments/assets/7d6d1597-aebb-43e2-8a67-2174efd9a3dc" />
-<img width="384" height="257" alt="image" src="https://github.com/user-attachments/assets/072463fc-2507-4259-bef9-75b84637a2b6" />
-<img width="454" height="245" alt="image" src="https://github.com/user-attachments/assets/14b958da-3264-41f3-996a-f2d057b3ce51" />
+<img width="1703" height="933" alt="image" src="https://github.com/user-attachments/assets/7d6d1597-aebb-43e2-8a67-2174efd9a3dc" />
+<img width="1703" height="933" alt="image" src="https://github.com/user-attachments/assets/072463fc-2507-4259-bef9-75b84637a2b6" />
+<img width="1703" height="933" alt="image" src="https://github.com/user-attachments/assets/14b958da-3264-41f3-996a-f2d057b3ce51" />
 <img width="1718" height="938" alt="image" src="https://github.com/user-attachments/assets/5ffc43e1-433a-4d55-82de-961bb453df69" />
 <img width="1703" height="933" alt="image" src="https://github.com/user-attachments/assets/f66356a8-1b1c-43ea-9094-03dad09beb42" />
 <img width="1707" height="945" alt="image" src="https://github.com/user-attachments/assets/efc13e13-5c80-427a-8621-b3e66bf0cbac" />
