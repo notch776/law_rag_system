@@ -8,3 +8,10 @@ numpy==1.26.4
 fastapi==0.104.1
 pydantic==2.8.2
 uvicorn==0.24.0
+websockets==12.0
+motor
+cn2an==0.5.24
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.27.1
+dashscope==1.24.1
+python-docx==1.1.2

@@ -1,0 +1,45 @@
+services:
+  # 1. Elasticsearch 数据库
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4
+    container_name: es-ragchat
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false  # 开发环境关闭安全验证
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data  # 数据持久化
+    healthcheck: 
+      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 2. Neo4j 图数据库
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: neo4j-ragchat
+    environment:
+      - NEO4J_AUTH=neo4j/change_me
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data  # 数据持久化
+
+  # 3. Redis 缓存数据库
+  redis:
+    image: redis:7-alpine
+    container_name: redis-ragchat
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data  # 数据持久化
+
+# 数据持久化卷
+volumes:
+  es-data:
+  neo4j-data:
+  redis-data:

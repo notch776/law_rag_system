@@ -1,71 +1,62 @@
-<!-- src/App.vue -->
 <template>
-  <div id="app" class="h-100">
-    <div class="container-fluid h-100 d-flex">
-      <!-- siderbar -->
-      <Sidebar
-        :conversations="conversations"
-        :activeId="activeConversationId"
-        @new="handleNewConversation"
-        @load="handleLoadConversation"
-      />
-
-      <!-- main chat -->
-      <ChatView
-        :conversationId="activeConversationId"
-        @update-conversation-id="activeConversationId = $event"
-        @new="handleNewConversation"
-        :key="activeConversationId"
-      />
-    </div>
+  <div id="app" class="app-shell">
+    <Sidebar
+      :conversations="conversations"
+      :activeId="activeConversationId"
+      @new="handleNewConversation"
+      @load="handleLoadConversation"
+    />
+    <RouterView
+      :conversations="conversations"
+      :activeId="activeConversationId"
+      :conversationId="activeConversationId"
+      @new="handleNewConversation"
+      @load="handleLoadConversation"
+      @refresh="refreshConversations"
+    />
   </div>
 </template>
 
 <script>
 import Sidebar from './components/Sidebar.vue';
-import ChatView from './views/ChatView.vue';
-import { getConversations, createNewConversation } from './api';
+import { createNewConversation, getConversations } from './api';
 
 export default {
-  components: { Sidebar, ChatView },
+  components: { Sidebar },
   data() {
     return {
       conversations: [],
-      activeConversationId: null
+      activeConversationId: null,
     };
+  },
+  computed: {
+    activeView() {
+      return this.$route.name === 'support' ? 'support' : 'chat';
+    },
+  },
+  async created() {
+    await this.refreshConversations();
+    if (this.conversations.length) {
+      this.activeConversationId = this.conversations[0].conversation_id;
+    } else if (this.activeView === 'chat') {
+      await this.handleNewConversation();
+    }
   },
   methods: {
     async refreshConversations() {
       this.conversations = await getConversations();
     },
-    async handleNewConversation() {
-      try {
-        const newId = await createNewConversation();
-        this.activeConversationId = newId;
-        await this.refreshConversations();
-      } catch (error) {
-        console.error('新建对话失败:', error);
-      }
+    async handleNewConversation(done) {
+      const id = await createNewConversation();
+      this.activeConversationId = id;
+      await this.refreshConversations();
+      if (this.$route.name !== 'chat') await this.$router.push({ name: 'chat' });
+      if (typeof done === 'function') done(id);
+      return id;
     },
     handleLoadConversation(conv) {
       this.activeConversationId = conv.conversation_id;
-    }
+    },
   },
-  async created() {
-    await this.refreshConversations();
-    if (this.conversations.length === 0) {
-      await this.handleNewConversation();
-    } else {
-      // or get first conv
-      this.activeConversationId = this.conversations[0].conversation_id;
-    }
-  }
-}
+};
 </script>
-
-<style>
-#app {
-  height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
-</style>
