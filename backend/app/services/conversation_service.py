@@ -1,6 +1,6 @@
 from typing import List
 from app.repositories.mongo_repo import MongoRepository, beijing_time
-from app.schemas.chat import Citation, ConversationDetail, ConversationSummary, Message
+from app.schemas.chat import CaseSlotState, Citation, ConversationDetail, ConversationSummary, Message
 
 
 class ConversationService:
@@ -34,6 +34,7 @@ class ConversationService:
             qa_id=qa_id or "",
             status=doc.get("status", "active"),
             messages=messages,
+            case_slot_state=CaseSlotState(**(doc.get("case_slot_state") or {})),
         )
 
     async def append_user(self, conversation_id: str, qa_id: str, query: str, mode: str):

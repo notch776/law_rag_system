@@ -1,5 +1,7 @@
 import logging
-from app.schemas.chat import IntentAnalysis, IntentItem
+import json
+from typing import Any, Dict
+from app.schemas.chat import CaseSlotState, IntentAnalysis, IntentItem
 from app.services.model_service import ModelService
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,12 @@ SCENARIO_GUIDE = """
 1. shareholder_governance: company_type, user_role, shareholding_ratio, dispute_action, requested_right, company_response, evidence, desired_remedy。
 2. equity_transfer_capital: company_type, user_role, transfer_subject, capital_contribution_status, other_shareholders_notice, preemptive_right_dispute, payment_or_price, desired_remedy。
 3. dissolution_liquidation: company_status, user_role, dissolution_reason, liquidation_status, creditor_or_shareholder_claim, debt_or_asset_info, responsible_party, desired_remedy。
-若是案例咨询，拆解 2 到 4 个法律子意图，每个子意图给 rewritten_query；同时在 slots 中抽取与 matched_scenario 对应的事实槽位，未知字段填 null 或空数组，不要臆造事实。
-输出字段：query_type, matched_scenario, risk_level, need_human, handoff_reason, direct_answer, direct_answer_text, need_clarification, clarification_question, missing_slots, intents, slots。
+每次调用时，用户消息会同时提供“当前会话案例槽位状态”。你必须基于用户本次问题对该状态做增量更新：
+1. case_slot_state 必须输出完整对象，包含 active_scenario、shareholder_governance、equity_transfer_capital、dissolution_liquidation 四部分。
+2. 如果本次问题补充、修正或否定了既有事实，应更新对应槽位；如果本次问题没有涉及某槽位，必须保留原值，不要清空。
+3. 如果本次是 simple_chat、non_legal、knowledge_qa 或 human_handoff，只要用户表达了与案件事实有关的信息，也要更新 case_slot_state；如果没有案件事实信息，则原样返回当前 case_slot_state。
+4. 若是案例咨询，拆解 2 到 4 个法律子意图，每个子意图给 rewritten_query；同时在 slots 中抽取与 matched_scenario 对应的本轮事实槽位，未知字段填 null 或空数组，不要臆造事实。
+输出字段：query_type, matched_scenario, risk_level, need_human, handoff_reason, direct_answer, direct_answer_text, need_clarification, clarification_question, missing_slots, intents, slots, case_slot_state。
 
 必须参考以下分类示例：
 用户：“我要转人工，你这个回答完全没用”
@@ -62,16 +68,30 @@ class IntentService:
     def __init__(self, model_service: ModelService):
         self.model = model_service
 
-    def analyze(self, query: str) -> IntentAnalysis:
+    def analyze(self, query: str, case_slot_state: Dict[str, Any] = None) -> IntentAnalysis:
         fallback = self._fallback(query)
+        current_slots = self._normalize_case_slot_state(case_slot_state)
+        fallback.case_slot_state = CaseSlotState(**current_slots)
+        user_payload = f"""【用户问题】
+{query}
+
+【当前会话案例槽位状态】
+{json.dumps(current_slots, ensure_ascii=False)}
+"""
         data = self.model.call_small_json([
             {"role": "system", "content": SCENARIO_GUIDE},
-            {"role": "user", "content": query},
+            {"role": "user", "content": user_payload},
         ], fallback=fallback.model_dump())
         try:
             analysis = IntentAnalysis(**data)
         except Exception:
             analysis = fallback
+        analysis.case_slot_state = CaseSlotState(**self._merge_case_slot_state(
+            current_slots,
+            analysis.case_slot_state.model_dump() if analysis.case_slot_state else {},
+            analysis.matched_scenario,
+            analysis.slots,
+        ))
         logger.info(
             "意图识别结果: query=%s query_type=%s need_human=%s direct_answer=%s intents=%d",
             query[:40],
@@ -133,6 +153,26 @@ class IntentService:
             intents=[IntentItem(intent_id="I1", intent_name="法律知识问答", rewritten_query=query)],
             slots={},
         )
+
+    def _normalize_case_slot_state(self, state: Dict[str, Any] = None) -> Dict[str, Any]:
+        return CaseSlotState(**(state or {})).model_dump()
+
+    def _merge_case_slot_state(self, current: Dict[str, Any], incoming: Dict[str, Any], scenario: str, slots: Dict[str, Any]) -> Dict[str, Any]:
+        merged = self._normalize_case_slot_state(current)
+        incoming_state = self._normalize_case_slot_state(incoming)
+        for key in ["shareholder_governance", "equity_transfer_capital", "dissolution_liquidation"]:
+            for field, value in incoming_state.get(key, {}).items():
+                if not self._is_empty(value):
+                    merged[key][field] = value
+        if scenario in ["shareholder_governance", "equity_transfer_capital", "dissolution_liquidation"]:
+            merged["active_scenario"] = scenario
+            for field, value in (slots or {}).items():
+                if field in merged[scenario] and not self._is_empty(value):
+                    merged[scenario][field] = value
+        return merged
+
+    def _is_empty(self, value) -> bool:
+        return value is None or value == "" or value == [] or value == {}
 
     def _match_scenario(self, query: str) -> str:
         if any(k in query for k in ["股权", "转让", "出资", "优先购买"]):
