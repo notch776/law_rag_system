@@ -22,7 +22,7 @@ services:
     image: neo4j:5.15-community
     container_name: neo4j-ragchat
     environment:
-      - NEO4J_AUTH=neo4j/change_me
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-change_me}
     ports:
       - "7474:7474"
       - "7687:7687"

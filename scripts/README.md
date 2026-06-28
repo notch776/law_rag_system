@@ -58,7 +58,7 @@ source scripts/env.local.sh
 - `ES_INDEX=new_qiyefa`
 - `DOCS_FOLDER=$PROJECT_ROOT/backend/rag/data`
 
-`backend/rag/.env` 会最后加载，因此当前真实 `DASHSCOPE_API_KEY` 会覆盖 `backend/.env` 中的占位值。
+本地 `.env` 文件不会提交到 Git；如需配置 `DASHSCOPE_API_KEY`、`NEO4J_AUTH` 等敏感变量，请只写入本地环境变量或未追踪的 `.env` 文件。
 
 ## 日志位置
 

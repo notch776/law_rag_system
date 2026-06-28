@@ -2,11 +2,12 @@
 # Unified local environment for refined legal RAG system.
 # Source this file before running backend scripts: source scripts/env.local.sh
 
-export PROJECT_ROOT="$PROJECT_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 export BACKEND_DIR="$PROJECT_ROOT/backend"
 export FRONTEND_DIR="$PROJECT_ROOT/frontend"
 
-# Load project env files. backend/rag/.env is loaded last so the real API key there wins over placeholders.
+# Load project env files. backend/rag/.env is loaded last for local overrides.
 # The parser tolerates legacy lines like "INDEX_NAME = new_qiyefa".
 load_env_file() {
   local file="$1"
@@ -53,7 +54,9 @@ export REDIS_PORT="${REDIS_PORT:-6379}"
 export REDIS_DB="${REDIS_DB:-0}"
 
 export NEO4J_URI="${NEO4J_URI:-bolt://localhost:7687}"
-export NEO4J_AUTH="${NEO4J_AUTH:-neo4j/change_me}"
+export NEO4J_USER="${NEO4J_USER:-neo4j}"
+export NEO4J_PASSWORD="${NEO4J_PASSWORD:-change_me}"
+export NEO4J_AUTH="${NEO4J_AUTH:-${NEO4J_USER}/${NEO4J_PASSWORD}}"
 export LONG_MEMORY_CATEGORY_THRESHOLD="${LONG_MEMORY_CATEGORY_THRESHOLD:-0.8}"
 export LONG_MEMORY_DOC_THRESHOLD="${LONG_MEMORY_DOC_THRESHOLD:-0.9}"
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 LOG_FILE="${1:-$PROJECT_ROOT/.local/logs/backend.log}"
 if [ ! -f "$LOG_FILE" ]; then
   echo "log file not found: $LOG_FILE" >&2
